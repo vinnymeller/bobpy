@@ -1,0 +1,12 @@
+[project]
+services_path = "services"
+libraries_path = "libraries"
+
+[requirement_lock]
+gunicorn = "==20.1.0"
+Flask = "==2.2.2"
+Flask-Cors = "==3.0.10"
+falcon = "==3.0.1"
+google-cloud-storage = "==1.42.3"
+
+
