@@ -1,8 +1,14 @@
 on:
   pull_request:
+    paths:
+      - 'src/**.rs'
+      - 'tests/**'
   push:
     branches:
       - master
+    paths:
+      - 'src/**.rs'
+      - 'tests/**'
 
 name: Test with Code Coverage
 

@@ -1,9 +1,15 @@
 name: Check and Lint
 on:
   pull_request:
+    paths:
+      - 'src/**.rs'
+      - 'tests/**'
   push:
     branches:
       - master
+    paths: 
+      - 'src/**.rs'
+      - 'tests/**'
 jobs:
   check:
     name: Check
