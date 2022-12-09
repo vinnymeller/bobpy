@@ -45,16 +45,13 @@ fn copy_files_to_build_dir(
 ) -> Result<(), Box<dyn std::error::Error>> {
     create_dirs_and_copy(
         &build_context.build_path,
-        build_path
-            .clone()
-            .join(build_context.build_path.clone())
-            .as_ref(),
+        build_path.join(&build_context.build_path).as_ref(),
     )?;
     for lib in build_context.libraries.iter() {
-        create_dirs_and_copy(&lib, build_path.clone().join(lib.clone()).as_ref())?;
+        create_dirs_and_copy(lib, build_path.join(lib).as_ref())?;
     }
     for path in build_context.paths.iter() {
-        create_dirs_and_copy(&path, build_path.clone().join(path.clone()).as_ref())?;
+        create_dirs_and_copy(path, build_path.join(path).as_ref())?;
     }
     Ok(())
 }
@@ -69,7 +66,7 @@ fn run_docker_build(
         .arg(build_path_str)
         .arg("--file")
         .arg(build_path.join("Dockerfile"))
-        .args(docker_build_args.clone())
+        .args(docker_build_args)
         .spawn()?;
     docker_build.wait()?;
     Ok(())
@@ -84,10 +81,10 @@ pub fn build_service(
     let build_path = create_bobpy_build_dir()?;
     let service_path = &build_path.join(&build_context.build_path);
     copy_files_to_build_dir(&build_context, &build_path)?;
-    build_context.write_requirements_file(&service_path.join("requirements.txt").to_str().unwrap(), &lock_map)?;
-    run_docker_build(
-        service_path,
-        &docker_build_args,
+    build_context.write_requirements_file(
+        service_path.join("requirements.txt").to_str().unwrap(),
+        &lock_map,
     )?;
+    run_docker_build(service_path, &docker_build_args)?;
     Ok(())
 }

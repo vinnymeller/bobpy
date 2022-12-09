@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     #[clap(subcommand)]
-    pub command: Commands
+    pub command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
@@ -14,10 +14,10 @@ pub enum Commands {
     Build {
         #[clap(help = "Path to the service you want to build")]
         service_path: String,
-        // create a catchall for any other args passed 
+        // create a catchall for any other args passed
         #[clap(last = true)]
         #[clap(help = "Any other args you want to pass to the docker build command (tags, etc)")]
-        docker_build_args: Vec<String>
+        docker_build_args: Vec<String>,
     },
     #[clap(about = "Check that all configuration for a service is valid")]
     Valid {

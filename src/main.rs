@@ -1,5 +1,5 @@
 use bobpy::build::build_service;
-use bobpy::cli::{parse, Args, Commands};
+use bobpy::cli::{parse, Commands};
 use bobpy::config::get_settings;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
