@@ -28,7 +28,7 @@ impl BuildContext {
                 let version = lock_map
                     .get(req)
                     .unwrap_or_else(|| panic!("Requirement {} not found in lock map", req));
-                format!("{}{}", req, version)
+                format!("{}=={}", req, version)
             })
             .collect()
     }

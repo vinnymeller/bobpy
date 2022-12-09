@@ -88,3 +88,9 @@ pub fn build_service(
     run_docker_build(service_path, &docker_build_args)?;
     Ok(())
 }
+
+pub fn clean_bobpy_cache() -> Result<(), Box<dyn std::error::Error>> {
+    let bobpy_build_path = PathBuf::from(".").join(".bobpy");
+    fs::remove_dir_all(bobpy_build_path)?;
+    Ok(())
+}
