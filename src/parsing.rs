@@ -1,179 +1,184 @@
-use crate::config::{RequirementLockMap, RequirementName};
+use crate::config::{Requirement, RequirementName, BOBPY_CONFIG};
+use crate::fs_utils;
 use glob::glob_with;
+use serde::Deserialize;
 use std::collections::HashSet;
-use std::io::{BufReader, Read};
+use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(serde::Deserialize, Debug)]
-pub struct BuildFile {
-    pub build_path: PathBuf,
+#[derive(Deserialize, Debug)]
+pub struct BuildDependencies {
     pub requirements: Vec<RequirementName>,
     pub libraries: Vec<PathBuf>,
     pub paths: Vec<PathBuf>,
 }
 
-#[derive(Debug)]
-pub struct BuildContext {
-    pub build_path: PathBuf,
+impl BuildDependencies {
+    pub fn from_str(
+        build_dependencies_str: &str,
+    ) -> Result<BuildDependencies, Box<dyn std::error::Error>> {
+        let config = config::Config::builder()
+            .set_default("requirements", Vec::<RequirementName>::new())?
+            .set_default("libraries", Vec::<String>::new())?
+            .set_default("paths", Vec::<String>::new())?
+            .add_source(config::File::from_str(
+                build_dependencies_str,
+                config::FileFormat::Toml,
+            ))
+            .build()?;
+        let config = config.try_deserialize()?;
+        Ok(config)
+    }
+    pub fn from_path(path: &Path) -> Result<BuildDependencies, Box<dyn std::error::Error>> {
+        let contents = fs::read_to_string(path)?;
+        let build_dependencies = BuildDependencies::from_str(&contents)?;
+        Ok(build_dependencies)
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct BuildFile {
+    pub path: PathBuf,
+    pub dependencies: BuildDependencies,
+}
+
+impl BuildFile {
+    pub fn from_path(path: &Path) -> Result<BuildFile, Box<dyn std::error::Error>> {
+        let contents = fs::read_to_string(path)?;
+        let build_dependencies = BuildDependencies::from_str(&contents)?;
+        Ok(BuildFile {
+            path: path.parent().unwrap().to_path_buf(),
+            dependencies: build_dependencies,
+        })
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ServiceDependencies {
     pub requirements: HashSet<RequirementName>,
     pub libraries: HashSet<PathBuf>,
     pub paths: HashSet<PathBuf>,
 }
 
-impl BuildContext {
-    pub fn get_versioned_requirements(&self, lock_map: &RequirementLockMap) -> Vec<String> {
+impl ServiceDependencies {
+    pub fn new() -> ServiceDependencies {
+        ServiceDependencies {
+            requirements: HashSet::new(),
+            libraries: HashSet::new(),
+            paths: HashSet::new(),
+        }
+    }
+
+    pub fn extend(&mut self, build_file_dependencies: &BuildDependencies) {
         self.requirements
+            .extend(build_file_dependencies.requirements.iter().cloned());
+        self.libraries
+            .extend(build_file_dependencies.libraries.iter().cloned());
+        self.paths
+            .extend(build_file_dependencies.paths.iter().cloned());
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Service {
+    pub path: PathBuf,
+    pub dependencies: ServiceDependencies,
+}
+
+impl Service {
+    pub fn from_path(path: &Path) -> Result<Service, Box<dyn std::error::Error>> {
+        let build_file = BuildFile::from_path(&path.join("BUILD"))?;
+        let mut service_dependencies = ServiceDependencies::new();
+        service_dependencies.extend(&build_file.dependencies);
+        let mut lib_paths_to_check = build_file.dependencies.libraries.to_owned();
+        while !lib_paths_to_check.is_empty() {
+            let lib_path = lib_paths_to_check.pop().unwrap();
+            let build_file_glob = format!("{}/**/BUILD", lib_path.display());
+            let build_file_paths_in_lib = glob_with(&build_file_glob, glob::MatchOptions::new())?;
+            for lib_build_file_path in build_file_paths_in_lib {
+                let lib_build_file_path = lib_build_file_path?;
+                service_dependencies
+                    .libraries
+                    .insert(lib_build_file_path.parent().unwrap().to_path_buf());
+                let lib_build_file = BuildFile::from_path(&lib_build_file_path)?;
+                service_dependencies.extend(&lib_build_file.dependencies);
+                for new_lib_to_check in lib_build_file.dependencies.libraries {
+                    if !service_dependencies.libraries.contains(&new_lib_to_check) {
+                        lib_paths_to_check.push(new_lib_to_check);
+                    }
+                }
+            }
+        }
+        Ok(Service {
+            path: path.to_path_buf(),
+            dependencies: service_dependencies,
+        })
+    }
+
+    fn get_versioned_requirements(&self) -> Vec<Requirement> {
+        self.dependencies
+            .requirements
             .iter()
-            .map(|req| {
-                let version = lock_map
-                    .get(req)
-                    .unwrap_or_else(|| panic!("Requirement {} not found in lock map", req));
-                format!("{}=={}", req, version)
+            .map(|requirement_name| {
+                let requirement_version =
+                    BOBPY_CONFIG.requirement_lock.get(requirement_name).unwrap();
+                Requirement {
+                    name: requirement_name.to_owned(),
+                    version: requirement_version.to_owned(),
+                }
             })
             .collect()
     }
 
-    pub fn write_requirements_file(
-        &self,
-        path: &str,
-        lock_map: &RequirementLockMap,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let requirements = self.get_versioned_requirements(lock_map);
-        let requirements_str = requirements.join("\n");
-        std::fs::write(path, requirements_str)?;
+    fn get_requirements_list(&self) -> Vec<String> {
+        let versioned_requirements = self.get_versioned_requirements();
+        versioned_requirements
+            .iter()
+            .map(|requirement| requirement.to_string())
+            .collect()
+    }
+
+    fn write_requirements_file(&self, build_path: &Path) -> Result<(), std::io::Error> {
+        let mut requirements_list = self.get_requirements_list();
+        requirements_list.sort();
+        let requirements_file_path = build_path.join(&self.path).join("requirements.txt");
+        fs::write(requirements_file_path, requirements_list.join("\n"))?;
         Ok(())
     }
-}
-
-pub fn read_file(path: &Path) -> Result<String, std::io::Error> {
-    let file = std::fs::File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut contents = String::new();
-    reader.read_to_string(&mut contents)?;
-    Ok(contents)
-}
-
-pub fn parse_build_file(build_file_path: &Path) -> Result<BuildFile, config::ConfigError> {
-    let file_contents = match read_file(build_file_path) {
-        Ok(contents) => contents,
-        Err(e) => {
-            return Err(config::ConfigError::Message(format!(
-                "Error reading build file {}: {}",
-                build_file_path.display(),
-                e
-            )))
+    fn write_init_if_needed(&self, lib_path: &Path) -> Result<(), std::io::Error> {
+        let init_file_path = lib_path.join("__init__.py");
+        if !init_file_path.exists() {
+            fs::write(init_file_path, "")?;
         }
-    };
+        Ok(())
+    }
 
-    let build_file_config = get_build_file_config(build_file_path, &file_contents)?;
-    Ok(build_file_config)
-}
-
-pub fn get_build_file_config(
-    build_file_path: &Path,
-    build_file_contents: &str,
-) -> Result<BuildFile, config::ConfigError> {
-    let config = config::Config::builder()
-        .set_override("build_path", build_file_path.to_str())?
-        .set_default("requirements", Vec::<RequirementName>::new())?
-        .set_default("libraries", Vec::<String>::new())?
-        .set_default("paths", Vec::<String>::new())?
-        .add_source(config::File::from_str(
-            build_file_contents,
-            config::FileFormat::Toml,
-        ))
-        .build()?;
-    let config = config.try_deserialize()?;
-    Ok(config)
-}
-
-pub fn parse_build_file_recursively(build_file: &BuildFile) -> BuildContext {
-    let mut context = BuildContext {
-        build_path: build_file.build_path.parent().unwrap().to_path_buf(),
-        requirements: build_file.requirements.iter().cloned().collect(),
-        libraries: build_file.libraries.iter().cloned().collect(),
-        paths: build_file.paths.iter().cloned().collect(),
-    };
-
-    let mut libs_to_check = build_file.libraries.to_owned();
-    while !libs_to_check.is_empty() {
-        let check_lib = libs_to_check.pop().unwrap().to_owned();
-        let build_path_glob = format!("{}/**/BUILD", check_lib.display());
-        println!("{}", build_path_glob);
-        // let build_paths = glob(&build_path_glob).unwrap();
-        let build_paths = glob_with(
-            &build_path_glob,
-            glob::MatchOptions {
-                case_sensitive: true,
-                require_literal_separator: false,
-                require_literal_leading_dot: false,
-            },
-        )
-        .unwrap_or_else(|_| panic!("Error parsing glob {}", build_path_glob));
-
-        for build_path in build_paths {
-            // get string from pathbuf
-            let temp_build_file = parse_build_file(build_path.unwrap().as_path()).unwrap();
-            for path in temp_build_file.paths {
-                context.paths.insert(path);
-            }
-            for lib in temp_build_file.libraries[..].iter() {
-                if context.libraries.insert(lib.clone()) {
-                    libs_to_check.push(lib.to_path_buf());
-                }
-            }
-            for req in temp_build_file.requirements[..].iter() {
-                context.requirements.insert(req.to_string());
+    pub fn create_service_context(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let build_path = Path::new(".bobpy")
+            .join("builds")
+            .join(uuid::Uuid::new_v4().to_string());
+        let mut paths_to_copy = Vec::new();
+        paths_to_copy.push(&self.path);
+        paths_to_copy.extend(self.dependencies.paths.iter());
+        paths_to_copy.extend(self.dependencies.libraries.iter());
+        fs::create_dir_all(&build_path)?;
+        for path in paths_to_copy {
+            fs_utils::copy(&path, &build_path.join(path))?;
+        }
+        self.write_requirements_file(&build_path)?;
+        let build_libs_path = build_path.join(&BOBPY_CONFIG.project.libraries_path);
+        self.write_init_if_needed(&build_libs_path)?;
+        let lib_paths = glob_with(
+            format!("{}/**", build_libs_path.to_str().unwrap()).as_str(),
+            glob::MatchOptions::new())?;
+        for lib_path in lib_paths {
+            let lib_path = lib_path?;
+            println!("lib_path: {}", lib_path.display());
+            if lib_path.is_dir() {
+                self.write_init_if_needed(&lib_path)?;
             }
         }
-    }
 
-    context
-}
-
-pub fn get_build_context(service_path: &str) -> Result<BuildContext, Box<dyn std::error::Error>> {
-    let build_file_path = Path::new(service_path).join("BUILD");
-    let build_config = parse_build_file(Path::new(&build_file_path))?;
-    Ok(parse_build_file_recursively(&build_config))
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_get_build_file_config_defaults() {
-        let build_file_contents = "";
-        let build_file_path = Path::new("test");
-        let build_config = get_build_file_config(build_file_path, build_file_contents).unwrap();
-        assert_eq!(build_config.build_path, build_file_path);
-        assert_eq!(build_config.requirements, Vec::<RequirementName>::new());
-        assert_eq!(build_config.libraries, Vec::<PathBuf>::new());
-        assert_eq!(build_config.paths, Vec::<PathBuf>::new());
-    }
-
-    #[test]
-    fn test_get_build_file_config_overrides() {
-        let build_file_contents = r#"
-            requirements = ["foo", "bar"]
-            libraries = ["baz"]
-            paths = ["qux"]
-        "#;
-        let build_file_path = Path::new("test");
-        let build_config = get_build_file_config(build_file_path, build_file_contents).unwrap();
-        assert_eq!(build_config.build_path, build_file_path);
-        assert_eq!(build_config.requirements, vec!["foo", "bar"]);
-        assert_eq!(build_config.libraries, vec![PathBuf::from("baz")]);
-        assert_eq!(build_config.paths, vec![PathBuf::from("qux")]);
-    }
-
-    #[test]
-    fn test_get_build_file_config_invalid() {
-        let build_file_contents = r#"
-            requirements = "foo"
-        "#;
-        let build_file_path = Path::new("test");
-        let build_config = get_build_file_config(build_file_path, build_file_contents);
-        assert!(build_config.is_err());
+        Ok(())
     }
 }
