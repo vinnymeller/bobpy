@@ -2,11 +2,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use once_cell::sync::Lazy;
-
-// global config so we don't have to pass it around
-pub static BOBPY_CONFIG: Lazy<BobpyConfig> = Lazy::new(|| BobpyConfig::load().unwrap());
-
 #[derive(serde::Deserialize, Debug)]
 pub struct ProjectConfig {
     pub services_path: PathBuf,

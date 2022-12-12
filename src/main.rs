@@ -1,22 +1,28 @@
 use std::path::Path;
 
 use bobpy::cli::{parse, Commands};
-use bobpy::parsing::Service;
+use bobpy::commands;
+use bobpy::config::BobpyConfig;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let bobpy_config = BobpyConfig::load()?;
     let args = parse();
     match args.command {
         Commands::Build {
             service_path,
-            docker_build_args: _,
+            docker_build_args,
+            check,
         } => {
-            Service::from_path(Path::new(&service_path))?
-                .create_service_context()?;
+            commands::build(
+                &Path::new(&service_path),
+                &bobpy_config,
+                &docker_build_args,
+                &check,
+            )?;
         }
-        _ => {
-            println!("Not implemented");
+        Commands::Clean => {
+            commands::clean()?;
         }
-
     }
     Ok(())
 }
