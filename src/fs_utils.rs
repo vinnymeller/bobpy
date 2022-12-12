@@ -1,6 +1,6 @@
-use std::path::Path;
 use fs_extra::dir;
 use std::fs;
+use std::path::Path;
 
 pub fn copy(from: &Path, to: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let todest = to.join(from);
@@ -22,7 +22,6 @@ pub fn copy(from: &Path, to: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
 
@@ -33,7 +32,7 @@ mod tests {
     fn get_random_path() -> PathBuf {
         PathBuf::from(uuid::Uuid::new_v4().to_string())
     }
-    
+
     #[test]
     fn test_copy_file_to_dir() {
         let from = get_random_path();
@@ -68,6 +67,5 @@ mod tests {
 
         dir::remove(fromdir).unwrap();
         dir::remove(todir.parent().unwrap()).unwrap();
-
     }
 }

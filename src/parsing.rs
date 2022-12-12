@@ -1,4 +1,5 @@
-use crate::config::{Requirement, RequirementName, RequirementLockMap};
+use crate::config::BobpyConfig;
+use crate::config::{Requirement, RequirementLockMap, RequirementName};
 use crate::fs_utils;
 use fs_extra::dir;
 use glob::glob_with;
@@ -6,7 +7,6 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::config::BobpyConfig;
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct BuildDependencies {
@@ -95,7 +95,7 @@ impl ServiceDependencies {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct ServiceContext{
+pub struct ServiceContext {
     pub path: PathBuf,
     pub dependencies: ServiceDependencies,
 }
@@ -138,13 +138,15 @@ impl ServiceContext {
         paths
     }
 
-    fn get_versioned_requirements(&self, requirement_lock: &RequirementLockMap) -> Vec<Requirement> {
+    fn get_versioned_requirements(
+        &self,
+        requirement_lock: &RequirementLockMap,
+    ) -> Vec<Requirement> {
         self.dependencies
             .requirements
             .iter()
             .map(|requirement_name| {
-                let requirement_version =
-                    requirement_lock.get(requirement_name).unwrap();
+                let requirement_version = requirement_lock.get(requirement_name).unwrap();
                 Requirement {
                     name: requirement_name.to_owned(),
                     version: requirement_version.to_owned(),
@@ -161,7 +163,11 @@ impl ServiceContext {
             .collect()
     }
 
-    fn write_requirements_file(&self, build_path: &Path, requirement_lock: &RequirementLockMap) -> Result<(), std::io::Error> {
+    fn write_requirements_file(
+        &self,
+        build_path: &Path,
+        requirement_lock: &RequirementLockMap,
+    ) -> Result<(), std::io::Error> {
         let mut requirements_list = self.get_requirements_list(requirement_lock);
         requirements_list.sort();
         let requirements_file_path = build_path.join(&self.path).join("requirements.txt");
@@ -176,10 +182,16 @@ impl ServiceContext {
         Ok(())
     }
 
-    pub fn write_service_context(&self, bobpy_config: &BobpyConfig) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let build_path = Path::new(".bobpy")
-            .join("builds")
-            .join(&self.path.strip_prefix(&bobpy_config.project.services_path).unwrap());
+    pub fn write_service_context(
+        &self,
+        bobpy_config: &BobpyConfig,
+    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let build_path = Path::new(".bobpy").join("builds").join(
+            &self
+                .path
+                .strip_prefix(&bobpy_config.project.services_path)
+                .unwrap(),
+        );
 
         dir::create_all(&build_path, true)?;
 
@@ -268,6 +280,5 @@ mod tests {
         assert!(service_deps.requirements.contains(&"requests".to_string()));
         assert!(service_deps.libraries.contains(&PathBuf::from("lib1")));
         assert!(service_deps.paths.contains(&PathBuf::from("path1")));
-
     }
 }

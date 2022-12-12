@@ -1,0 +1,32 @@
+on:
+  push:
+    tags:
+      - 'v*'
+
+name: Release Packaging
+
+jobs:
+  release:
+    name: Release Packaging
+    env:
+      PROJECT_NAME_UNDERSCORE: bobpy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Release Build
+        run: cargo build --release
+      - name: 'Create Release'
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            Need to figure out how to automate this!

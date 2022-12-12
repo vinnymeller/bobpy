@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-
 pub fn get_changed_git_paths(base_branch: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let output = std::process::Command::new("git")
         .arg("diff")

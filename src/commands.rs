@@ -31,6 +31,6 @@ pub fn build(
 }
 
 pub fn clean() -> Result<(), fs_extra::error::Error> {
-    Ok(dir::remove(".bobpy")?)
+    dir::remove("build")?;
+    Ok(())
 }
-

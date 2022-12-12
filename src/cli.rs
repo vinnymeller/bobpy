@@ -16,7 +16,11 @@ pub enum Commands {
         service_path: String,
         #[clap(help = "Whether ")]
         // make a flag --check with a required string argument representing the git branch to check against
-        #[clap(long, short, help = "Check if any service files have changed since the given git branch")]
+        #[clap(
+            long,
+            short,
+            help = "Check if any service files have changed since the given git branch"
+        )]
         check: Option<String>,
 
         // create a catchall for any other args passed
@@ -31,4 +35,3 @@ pub enum Commands {
 pub fn parse() -> Args {
     Args::parse()
 }
-
